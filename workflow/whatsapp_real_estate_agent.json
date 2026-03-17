@@ -1,0 +1,451 @@
+{
+  "name": "WhatsApp Real Estate AI Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-real-estate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1a2b3c4d-0001-0001-0001-000000000001",
+      "name": "WhatsApp Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-real-estate",
+      "notes": "Receives inbound WhatsApp messages forwarded by Twilio. Configure Twilio's WhatsApp Sandbox / approved number to POST to this webhook URL."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Parse Twilio WhatsApp payload ──────────────────────────────────────\n// Twilio sends application/x-www-form-urlencoded; n8n decodes it for us.\nconst body = $input.first().json.body || $input.first().json;\n\nconst from     = body.From  || body.from  || '';   // e.g. whatsapp:+919876543210\nconst to       = body.To    || body.to    || '';   // Twilio number\nconst msgBody  = body.Body  || body.body  || '';   // User's message text\nconst msgSid   = body.MessageSid || '';\n\n// Strip the 'whatsapp:' prefix to get a plain phone number\nconst phone = from.replace('whatsapp:', '').trim();\n\nreturn [{ json: { from, to, phone, message: msgBody, messageSid: msgSid } }];\n"
+      },
+      "id": "1a2b3c4d-0002-0002-0002-000000000002",
+      "name": "Parse WhatsApp Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300],
+      "notes": "Extracts the sender phone number and message text from the Twilio webhook payload."
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "resource": "chat",
+        "operation": "complete",
+        "model": "={{ $env.OPENAI_MODEL || 'gpt-4o' }}",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are {{ $env.AGENT_NAME || 'Priya' }}, a friendly and professional real estate AI assistant for {{ $env.REAL_ESTATE_COMPANY_NAME || 'YourRealty' }}.\n\nYour responsibilities:\n1. Warmly greet new leads.\n2. Understand their property requirements (location, budget, type: flat/villa/plot, BHK).\n3. When a user asks about properties in a specific location, output a JSON action block so the workflow can fetch the listing link.\n4. When a user wants to book a property visit appointment, collect: name, email, preferred date & time, and property of interest, then output a JSON action block.\n5. Provide helpful information about the real estate market.\n\nRules:\n- Always respond in a warm, concise, professional tone.\n- When you need to send a property listing link, respond with plain text followed by this exact JSON block on a new line:\n  ACTION:{\"type\":\"property_search\",\"location\":\"<location>\",\"property_type\":\"<type or null>\",\"budget\":\"<budget or null>\"}\n- When you need to book an appointment, respond with plain text followed by:\n  ACTION:{\"type\":\"book_appointment\",\"lead_name\":\"<name>\",\"lead_email\":\"<email>\",\"lead_phone\":\"<phone>\",\"property\":\"<property description>\",\"preferred_datetime\":\"<ISO 8601 datetime>\"}\n- Do NOT invent property listings. Always let the workflow fetch the real URL.\n- Keep messages short enough to fit in WhatsApp (under 1600 characters).\n- If the user says goodbye or thanks, wrap up the conversation politely."
+            },
+            {
+              "role": "user",
+              "content": "={{ $json.message }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.4,
+          "maxTokens": 600
+        }
+      },
+      "id": "1a2b3c4d-0003-0003-0003-000000000003",
+      "name": "AI Agent (OpenAI)",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1,
+      "position": [700, 300],
+      "credentials": {
+        "openAiApi": {
+          "name": "OpenAI account"
+        }
+      },
+      "notes": "Core AI brain. Handles conversation flow, intent detection, and emits structured ACTION blocks for downstream nodes."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Parse AI response and detect ACTION blocks ───────────────────────\nconst aiText = $input.first().json.choices?.[0]?.message?.content ||\n               $input.first().json.text || '';\n\nconst phone   = $('Parse WhatsApp Message').first().json.phone;\nconst from    = $('Parse WhatsApp Message').first().json.from;\n\n// Extract ACTION JSON if present\nconst actionMatch = aiText.match(/ACTION:(\\{.*\\})/s);\nlet action = null;\nlet replyText = aiText;\n\nif (actionMatch) {\n  try {\n    action = JSON.parse(actionMatch[1]);\n    // Remove the ACTION line from the user-facing reply\n    replyText = aiText.replace(/ACTION:\\{.*\\}/s, '').trim();\n  } catch (e) {\n    // Malformed JSON – treat as plain text\n    action = null;\n  }\n}\n\nreturn [{ json: { aiResponse: aiText, replyText, action, phone, from } }];\n"
+      },
+      "id": "1a2b3c4d-0004-0004-0004-000000000004",
+      "name": "Parse AI Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 300],
+      "notes": "Splits the AI output into the human-readable reply and the optional structured ACTION payload."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-property-search",
+              "leftValue": "={{ $json.action?.type }}",
+              "rightValue": "property_search",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1a2b3c4d-0005-0005-0005-000000000005",
+      "name": "Is Property Search?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1180, 200],
+      "notes": "Routes to property link builder when the AI detected a location-specific property inquiry."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-book-appt",
+              "leftValue": "={{ $json.action?.type }}",
+              "rightValue": "book_appointment",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1a2b3c4d-0006-0006-0006-000000000006",
+      "name": "Is Appointment Booking?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1180, 420],
+      "notes": "Routes to Calendar + Gmail nodes when the AI has collected all appointment details."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Build property listing URL ────────────────────────────────────────\nconst action   = $json.action;\nconst base     = $env.PROPERTY_WEBSITE_BASE_URL || 'https://www.yourrealestate.com/properties';\n\n// Build query string from action parameters\nconst params = new URLSearchParams();\nif (action.location)      params.set('location',      action.location);\nif (action.property_type) params.set('type',          action.property_type);\nif (action.budget)        params.set('max_price',     action.budget);\n\nconst listingUrl = `${base}?${params.toString()}`;\n\n// Append the link to the AI's conversational reply\nconst fullReply = `${$json.replyText}\\n\\n🏘️ Browse matching properties here:\\n${listingUrl}`;\n\nreturn [{ json: { ...$json, fullReply, listingUrl } }];\n"
+      },
+      "id": "1a2b3c4d-0007-0007-0007-000000000007",
+      "name": "Build Property Listing URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 160],
+      "notes": "Constructs a deep-link URL to the property listings page filtered by the requested location, type, and budget."
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_CALENDAR_ID || 'primary' }}",
+          "mode": "id"
+        },
+        "start": "={{ $json.action.preferred_datetime }}",
+        "end": "={{ (() => { const d = new Date($json.action.preferred_datetime); d.setHours(d.getHours() + 1); return d.toISOString(); })() }}",
+        "additionalFields": {
+          "summary": "Property Visit – {{ $json.action.property || 'Property' }}",
+          "description": "Lead: {{ $json.action.lead_name }}\nPhone: {{ $json.action.lead_phone }}\nEmail: {{ $json.action.lead_email }}\nProperty: {{ $json.action.property }}\n\nBooked via WhatsApp AI Agent.",
+          "attendees": [
+            {
+              "email": "={{ $json.action.lead_email }}"
+            }
+          ],
+          "conferenceDataVersion": 0
+        }
+      },
+      "id": "1a2b3c4d-0008-0008-0008-000000000008",
+      "name": "Create Google Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [1420, 380],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "name": "Google Calendar account"
+        }
+      },
+      "notes": "Creates a 1-hour property visit appointment on the agent's Google Calendar and invites the lead."
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.action.lead_email }}",
+        "subject": "Your Property Visit is Confirmed",
+        "emailType": "html",
+        "message": "<!DOCTYPE html>\n<html>\n<body style=\"font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:20px\">\n  <h2 style=\"color:#2c5282\">Property Visit Confirmed</h2>\n  <p>Dear <strong>{{ $('Parse AI Response').first().json.action.lead_name }}</strong>,</p>\n  <p>Thank you for your interest! Your property visit appointment has been successfully booked.</p>\n  <table style=\"width:100%;border-collapse:collapse;margin:20px 0\">\n    <tr style=\"background:#ebf4ff\">\n      <td style=\"padding:10px;font-weight:bold\">Property</td>\n      <td style=\"padding:10px\">{{ $('Parse AI Response').first().json.action.property }}</td>\n    </tr>\n    <tr>\n      <td style=\"padding:10px;font-weight:bold\">Date and Time</td>\n      <td style=\"padding:10px\">{{ new Date($('Parse AI Response').first().json.action.preferred_datetime).toLocaleString('en-IN', { dateStyle:'full', timeStyle:'short' }) }}</td>\n    </tr>\n    <tr style=\"background:#ebf4ff\">\n      <td style=\"padding:10px;font-weight:bold\">Your Phone</td>\n      <td style=\"padding:10px\">{{ $('Parse AI Response').first().json.action.lead_phone }}</td>\n    </tr>\n  </table>\n  <p>A calendar invite has been sent to your email. Our agent will contact you shortly to confirm the details.</p>\n  <p>If you need to reschedule or have any questions, simply reply to this email or WhatsApp us.</p>\n  <hr style=\"border:none;border-top:1px solid #e2e8f0;margin:20px 0\">\n  <p style=\"color:#718096;font-size:12px\">{{ $env.REAL_ESTATE_COMPANY_NAME || 'YourRealty' }} | Powered by AI Agent</p>\n</body>\n</html>",
+        "options": {
+          "senderName": "={{ ($env.REAL_ESTATE_COMPANY_NAME || 'YourRealty') + ' – ' + ($env.AGENT_NAME || 'Priya') }}"
+        }
+      },
+      "id": "1a2b3c4d-0009-0009-0009-000000000009",
+      "name": "Send Gmail Confirmation",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1660, 380],
+      "credentials": {
+        "gmailOAuth2": {
+          "name": "Gmail account"
+        }
+      },
+      "notes": "Sends an HTML appointment confirmation email to the lead via Gmail."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Compose final WhatsApp reply after booking ────────────────────────\nconst action    = $('Parse AI Response').first().json.action;\nconst replyText = $('Parse AI Response').first().json.replyText;\n\nconst dt = new Date(action.preferred_datetime);\nconst dateStr = dt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });\n\nconst fullReply =\n  `${replyText}\\n\\n` +\n  `*Appointment Confirmed!*\\n` +\n  `Date & Time: ${dateStr}\\n` +\n  `Property: ${action.property}\\n` +\n  `A confirmation email has been sent to ${action.lead_email}.\\n\\n` +\n  `Our agent will be in touch soon. Thank you!`;\n\nreturn [{ json: { ...$json, fullReply, phone: $('Parse AI Response').first().json.phone, from: $('Parse AI Response').first().json.from } }];\n"
+      },
+      "id": "1a2b3c4d-0010-0010-0010-000000000010",
+      "name": "Compose Booking Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1900, 380],
+      "notes": "Builds the WhatsApp confirmation message that will be sent to the lead after a successful booking."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Plain conversational reply (no action needed) ────────────────────\nreturn [{ json: { ...$json, fullReply: $json.replyText } }];\n"
+      },
+      "id": "1a2b3c4d-0011-0011-0011-000000000011",
+      "name": "Plain Conversation Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1420, 560],
+      "notes": "Passes through the AI reply unchanged for general conversational messages that need no action."
+    },
+    {
+      "parameters": {
+        "mode": "chooseBranch",
+        "output": "input1"
+      },
+      "id": "1a2b3c4d-0012-0012-0012-000000000012",
+      "name": "Merge Replies",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [2140, 360],
+      "notes": "Collects the reply from whichever branch was active and feeds it to the WhatsApp sender."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Send WhatsApp message via Twilio REST API ─────────────────────────\nconst accountSid  = $env.TWILIO_ACCOUNT_SID;\nconst authToken   = $env.TWILIO_AUTH_TOKEN;\nconst fromNumber  = $env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';\n\n// Get the resolved reply and recipient from whichever branch ran\nconst item = $input.first().json;\nconst toNumber = item.from || `whatsapp:${item.phone}`;\nconst messageBody = item.fullReply || item.replyText || 'Thank you for contacting us!';\n\nconst url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;\n\nconst formData = new URLSearchParams({\n  From: fromNumber,\n  To: toNumber,\n  Body: messageBody\n});\n\nconst response = await fetch(url, {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'application/x-www-form-urlencoded',\n    'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64')\n  },\n  body: formData.toString()\n});\n\nconst result = await response.json();\nreturn [{ json: { twilioSid: result.sid, status: result.status, to: toNumber, body: messageBody } }];\n"
+      },
+      "id": "1a2b3c4d-0013-0013-0013-000000000013",
+      "name": "Send WhatsApp Reply (Twilio)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2380, 360],
+      "notes": "Sends the final reply back to the lead's WhatsApp number using the Twilio Messaging API."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "1a2b3c4d-0014-0014-0014-000000000014",
+      "name": "Respond to Twilio Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2620, 360],
+      "notes": "Returns HTTP 200 to Twilio immediately so it does not retry the webhook delivery."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"error\", \"message\": \"{{ $json.message }}\" }",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "1a2b3c4d-0015-0015-0015-000000000015",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2620, 520],
+      "notes": "Returns HTTP 500 if an unhandled error occurs so Twilio knows to log the failure."
+    }
+  ],
+  "connections": {
+    "WhatsApp Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse WhatsApp Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse WhatsApp Message": {
+      "main": [
+        [
+          {
+            "node": "AI Agent (OpenAI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent (OpenAI)": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Is Property Search?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is Appointment Booking?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Property Search?": {
+      "main": [
+        [
+          {
+            "node": "Build Property Listing URL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Plain Conversation Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Appointment Booking?": {
+      "main": [
+        [
+          {
+            "node": "Create Google Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Property Listing URL": {
+      "main": [
+        [
+          {
+            "node": "Merge Replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Google Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail Confirmation": {
+      "main": [
+        [
+          {
+            "node": "Compose Booking Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compose Booking Reply": {
+      "main": [
+        [
+          {
+            "node": "Merge Replies",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Plain Conversation Reply": {
+      "main": [
+        [
+          {
+            "node": "Merge Replies",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge Replies": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp Reply (Twilio)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp Reply (Twilio)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Twilio Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "real-estate" },
+    { "name": "whatsapp" },
+    { "name": "ai-agent" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-03-17T00:00:00.000Z",
+  "versionId": "1"
+}

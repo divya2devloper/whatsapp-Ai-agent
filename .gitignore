@@ -1,0 +1,16 @@
+# Secrets and local overrides
+.env
+
+# n8n local data directory
+.n8n/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Node dependencies (if any helper scripts are added later)
+node_modules/
