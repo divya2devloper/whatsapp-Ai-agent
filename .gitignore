@@ -12,5 +12,13 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Node dependencies (if any helper scripts are added later)
+# Node dependencies
 node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+
+# Runtime SQLite database (created automatically on first start)
+backend/data/

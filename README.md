@@ -1,194 +1,250 @@
 # WhatsApp AI Real Estate Agent
 
-An **n8n**-powered WhatsApp AI agent that handles real estate leads end-to-end:
-
-- Receives inbound WhatsApp messages via **Twilio**
-- Uses **OpenAI GPT-4o** to understand user intent
-- Sends **property listing links** filtered by location, type, and budget
-- Books **property visit appointments** on **Google Calendar** and sends **Gmail** confirmation emails
-- Responds back to the lead on WhatsApp automatically
+An end-to-end WhatsApp AI agent for real estate lead management, built with **Node.js + Express** (backend), **React + Vite + Tailwind CSS** (admin dashboard), and optionally **n8n** for no-code automation.
 
 ---
 
-## Workflow Diagram
+## Features
 
-```
-WhatsApp Lead
-     │  (Twilio webhook)
-     ▼
-n8n Webhook ──► Parse Message ──► AI Agent (GPT-4o)
-                                         │
-                     ┌───────────────────┼───────────────────┐
-                     ▼                   ▼                   ▼
-              Property Search     Book Appointment      Plain Reply
-                     │                   │
-             Build Listing URL    Google Calendar
-                     │               + Gmail
-                     └─────────┬─────────┘
-                               ▼
-                     Send WhatsApp Reply
-                        (Twilio API)
-```
-
-For a detailed node-by-node explanation see [`docs/workflow-overview.md`](docs/workflow-overview.md).
-
----
-
-## Prerequisites
-
-| Service | Purpose |
+| Feature | Description |
 |---|---|
-| [n8n](https://n8n.io) (≥ 1.30) | Workflow automation engine |
-| [Twilio](https://twilio.com) | WhatsApp Business API / Sandbox |
-| [OpenAI](https://platform.openai.com) | AI language model (GPT-4o) |
-| [Google Cloud](https://console.cloud.google.com) | Calendar & Gmail OAuth2 |
-| Your property listing website | Generates filtered search URLs |
+| 💬 WhatsApp AI Chat | OpenAI-powered conversational agent answers property inquiries 24/7 |
+| 🏘️ Property Search | AI detects location intent and sends a matching listing link from your database |
+| 📅 Appointment Booking | Collects lead details and books property visits on **Google Calendar** |
+| 📧 Email Confirmation | Sends an HTML confirmation email via **Gmail OAuth2** |
+| 👩‍💼 Admin Dashboard | React dashboard to manage leads, conversations, properties and appointments |
+| 🗄️ SQLite Database | Zero-config embedded database – no external DB needed |
+
+---
+
+## Project Structure
+
+```
+whatsapp-Ai-agent/
+├── backend/                  # Express API server
+│   ├── src/
+│   │   ├── server.js         # Entry point
+│   │   ├── db/database.js    # SQLite schema + seed
+│   │   ├── routes/
+│   │   │   ├── webhook.js    # POST /webhook/whatsapp (Twilio)
+│   │   │   ├── leads.js      # /api/leads
+│   │   │   ├── properties.js # /api/properties
+│   │   │   ├── appointments.js # /api/appointments
+│   │   │   ├── stats.js      # /api/stats
+│   │   │   └── settings.js   # /api/settings
+│   │   └── services/
+│   │       ├── ai.js         # OpenAI conversation + intent parsing
+│   │       ├── twilio.js     # WhatsApp message sender
+│   │       └── google.js     # Google Calendar + Gmail
+│   ├── package.json
+│   └── data/                 # SQLite DB (auto-created, gitignored)
+├── frontend/                 # React admin dashboard
+│   ├── src/
+│   │   ├── App.jsx           # Router
+│   │   ├── api/client.js     # Axios API client
+│   │   ├── components/       # Layout, Badge, StatsCard
+│   │   └── pages/
+│   │       ├── Dashboard.jsx
+│   │       ├── Leads.jsx
+│   │       ├── LeadDetail.jsx
+│   │       ├── Properties.jsx
+│   │       ├── Appointments.jsx
+│   │       └── Settings.jsx
+│   └── package.json
+├── workflow/
+│   └── whatsapp_real_estate_agent.json  # n8n workflow (optional)
+├── docs/workflow-overview.md
+└── .env.example
+```
 
 ---
 
 ## Quick Start
 
-### 1. Clone & configure environment
+### Prerequisites
+
+- **Node.js 18+**
+- **Twilio account** with WhatsApp enabled (sandbox or approved number)
+- **OpenAI API key**
+- **Google Cloud project** with Calendar + Gmail APIs enabled (for appointment booking)
+
+### 1. Clone & Configure
 
 ```bash
 git clone https://github.com/divya2devloper/whatsapp-Ai-agent.git
 cd whatsapp-Ai-agent
 cp .env.example .env
-# Edit .env and fill in all credentials
+# Edit .env and fill in your credentials
 ```
 
-### 2. Start n8n
+### 2. Install Dependencies
 
 ```bash
-# Docker (recommended)
-docker run -it --rm \
-  --name n8n \
-  -p 5678:5678 \
-  -v ~/.n8n:/home/node/.n8n \
-  --env-file .env \
-  n8nio/n8n
-
-# Or npm
-npm install -g n8n
-n8n start
+cd backend && npm install
+cd ../frontend && npm install
 ```
 
-### 3. Import the workflow
+### 3. Start the Backend
 
-1. Open n8n at `http://localhost:5678`
-2. Go to **Workflows → Import from file**
-3. Select `workflow/whatsapp_real_estate_agent.json`
-4. Click **Save** and then **Activate**
+```bash
+cd backend
+npm start          # production
+# or
+npm run dev        # development (auto-restarts on changes)
+```
 
-### 4. Configure credentials in n8n
+The server starts on `http://localhost:3001` (configurable via `PORT` in `.env`).
 
-Navigate to **Settings → Credentials** and create:
+### 4. Start the Admin Dashboard
 
-| Credential name | Type | Notes |
+```bash
+cd frontend
+npm run dev        # development server at http://localhost:5173
+# or
+npm run build      # build for production → dist/
+```
+
+### 5. Expose the Webhook to Twilio
+
+Twilio needs a public HTTPS URL to forward WhatsApp messages to your backend. Use [ngrok](https://ngrok.com/) during development:
+
+```bash
+ngrok http 3001
+```
+
+In your [Twilio Console](https://console.twilio.com/), set the WhatsApp **Incoming Message** webhook URL to:
+```
+https://<your-ngrok-id>.ngrok.io/webhook/whatsapp
+```
+
+---
+
+## Google OAuth2 Setup (Calendar + Gmail)
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → create a project
+2. Enable **Google Calendar API** and **Gmail API**
+3. Create **OAuth 2.0 credentials** (Desktop app type)
+4. Download `credentials.json` and run this one-time flow to get your refresh token:
+
+```bash
+node -e "
+const { google } = require('googleapis');
+const readline = require('readline');
+
+const oAuth2 = new google.auth.OAuth2(
+  'YOUR_CLIENT_ID',
+  'YOUR_CLIENT_SECRET',
+  'http://localhost:3001/auth/google/callback'
+);
+const authUrl = oAuth2.generateAuthUrl({
+  access_type: 'offline',
+  scope: [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/gmail.send',
+  ],
+});
+console.log('Open this URL in your browser:\n', authUrl);
+
+const rl = readline.createInterface({ input: process.stdin });
+rl.question('\nPaste the code from the redirect URL: ', async (code) => {
+  const { tokens } = await oAuth2.getToken(code);
+  console.log('GOOGLE_REFRESH_TOKEN=', tokens.refresh_token);
+  rl.close();
+});
+"
+```
+
+5. Copy the `GOOGLE_REFRESH_TOKEN` value into your `.env` file
+
+---
+
+## API Reference
+
+### Webhook
+| Method | Path | Description |
 |---|---|---|
-| `OpenAI account` | OpenAI API | Paste your `OPENAI_API_KEY` |
-| `Google Calendar account` | Google Calendar OAuth2 | Authorise with your Google account |
-| `Gmail account` | Gmail OAuth2 | Same Google account or a dedicated sender |
+| POST | `/webhook/whatsapp` | Receives inbound WhatsApp messages from Twilio |
 
-> **Note:** Twilio credentials (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`) are read from environment variables inside the Code node, so no n8n credential object is required for Twilio.
+### Leads
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/leads` | List all leads (`?search=`, `?status=`, `?page=`, `?limit=`) |
+| GET | `/api/leads/:phone` | Lead detail + full conversation + appointments |
+| PUT | `/api/leads/:phone` | Update name, email, status, notes |
+| DELETE | `/api/leads/:phone` | Delete lead and all associated data |
 
-### 5. Connect Twilio to n8n
+### Properties
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/properties` | List all properties (`?active=true`) |
+| POST | `/api/properties` | Add a property listing |
+| PUT | `/api/properties/:id` | Update a property |
+| DELETE | `/api/properties/:id` | Delete a property |
 
-1. Activate the workflow in n8n
-2. Copy the **Webhook URL** shown on the _WhatsApp Webhook_ node  
-   (format: `https://<your-n8n-host>/webhook/whatsapp-real-estate`)
-3. In the [Twilio Console](https://console.twilio.com) → **Messaging → WhatsApp** → your sender:
-   - Set **"A MESSAGE COMES IN"** to `Webhook`, method `HTTP POST`
-   - Paste the n8n webhook URL
+### Appointments
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/appointments` | List appointments (`?status=`, `?date=YYYY-MM-DD`) |
+| PUT | `/api/appointments/:id` | Update status or notes |
+| DELETE | `/api/appointments/:id` | Delete appointment |
+
+### Settings / Stats
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/stats` | Dashboard statistics |
+| GET | `/api/settings` | Get agent settings |
+| PUT | `/api/settings` | Update agent settings |
 
 ---
 
-## Environment Variables
+## How the AI Conversation Works
 
-See [`.env.example`](.env.example) for the full list. Key variables:
+1. A lead sends a WhatsApp message → Twilio forwards it to `POST /webhook/whatsapp`
+2. The backend loads the last 20 messages from the SQLite DB for context
+3. OpenAI GPT-4o generates a reply (with the conversation history)
+4. If the AI detects a property inquiry, it emits:
+   `ACTION:{"type":"property_search","location":"Bandra","property_type":"2BHK","budget":"1Cr"}`
+5. The backend looks up a matching URL in the Properties table (or builds a deep-link to the base URL)
+6. If the AI has collected all booking details, it emits:
+   `ACTION:{"type":"book_appointment","lead_name":"...","lead_email":"...","preferred_datetime":"..."}`
+7. A Google Calendar event is created and a confirmation email is sent
+8. The final reply is sent back to the lead via Twilio
 
-| Variable | Description |
+---
+
+## Admin Dashboard Pages
+
+| Page | Description |
 |---|---|
-| `TWILIO_ACCOUNT_SID` | Twilio Account SID |
-| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
-| `TWILIO_WHATSAPP_FROM` | Sender number, e.g. `whatsapp:+14155238886` |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `OPENAI_MODEL` | Model name (default: `gpt-4o`) |
-| `GOOGLE_CALENDAR_ID` | Target calendar (default: `primary`) |
-| `PROPERTY_WEBSITE_BASE_URL` | Base URL of your property listings page |
-| `AGENT_NAME` | AI agent display name shown to leads |
-| `REAL_ESTATE_COMPANY_NAME` | Company name shown in messages and emails |
+| **Dashboard** | Stats cards, weekly message chart, recent leads, upcoming appointments |
+| **Leads** | Searchable lead list with status, message count, and last activity |
+| **Lead Detail** | Full conversation thread + lead edit form + appointments |
+| **Properties** | CRUD for property listings (location, URL, type, price range) |
+| **Appointments** | All booked visits with status management (confirm / complete / cancel) |
+| **Settings** | Agent name, company name, OpenAI model, property website URL |
 
 ---
 
-## Conversation Flow
+## n8n Workflow (Optional)
 
-### Property Inquiry
-
-> **Lead:** Show me 2BHK flats in Bandra under 80 lakhs  
-> **Agent:** Great choice! Bandra has some wonderful options. Here are properties matching your requirements:  
-> 🏘️ https://yourrealestate.com/properties?location=Bandra&type=2BHK&max_price=8000000
-
-### Appointment Booking
-
-> **Lead:** I'd like to visit the 3BHK flat in Andheri  
-> **Agent:** I'd be happy to book that visit! May I have your name and email address?  
-> **Lead:** Rahul Sharma, rahul@example.com  
-> **Agent:** What date and time works best for you?  
-> **Lead:** 20 March at 11am  
-> **Agent:**  
-> ✅ **Appointment Confirmed!**  
-> 📅 Date & Time: 20 Mar 2026, 11:00 am  
-> 🏡 Property: 3BHK Flat, Andheri West  
-> 📧 Confirmation email sent to rahul@example.com  
-> Our agent will be in touch soon. Thank you! 🙏
+An importable n8n workflow is available at `workflow/whatsapp_real_estate_agent.json` for teams that prefer a no-code automation approach. See `docs/workflow-overview.md` for details.
 
 ---
 
-## Customisation
+## Environment Variables Reference
 
-### Change AI persona
+See `.env.example` for the full list. Required variables:
 
-Edit `AGENT_NAME` and `REAL_ESTATE_COMPANY_NAME` in `.env`.
-
-### Use a different AI model
-
-Set `OPENAI_MODEL=gpt-3.5-turbo` in `.env` for lower cost, or `gpt-4o` for best accuracy.
-
-### Add more property filters
-
-In the **Build Property Listing URL** node, add additional `params.set(...)` calls to support filters like number of bathrooms, furnished status, etc.
-
-### Extend conversation memory
-
-Currently each message is stateless. To add memory, replace the OpenAI node with an **AI Agent** node backed by a **Buffer Memory** or **Redis Chat Memory** sub-node in n8n.
-
----
-
-## File Structure
-
-```
-whatsapp-Ai-agent/
-├── workflow/
-│   └── whatsapp_real_estate_agent.json   # n8n workflow (importable)
-├── docs/
-│   └── workflow-overview.md              # Detailed node documentation
-├── .env.example                          # Environment variable template
-├── pod flowchart.pdf                     # Original system flowchart
-└── README.md                             # This file
-```
-
----
-
-## Security Notes
-
-- **Never commit your `.env` file.** It is listed in `.gitignore`.
-- Rotate `TWILIO_AUTH_TOKEN` and `OPENAI_API_KEY` regularly.
-- In production, host n8n behind HTTPS and restrict the webhook path with a secret token.
-- Consider adding a Twilio request signature validator as a middleware in n8n to prevent spoofed webhook calls.
-
----
-
-## License
-
-MIT
+| Variable | Required | Description |
+|---|---|---|
+| `TWILIO_ACCOUNT_SID` | ✅ | Twilio account SID |
+| `TWILIO_AUTH_TOKEN` | ✅ | Twilio auth token |
+| `TWILIO_WHATSAPP_FROM` | ✅ | Your Twilio WhatsApp number |
+| `OPENAI_API_KEY` | ✅ | OpenAI API key |
+| `GOOGLE_CLIENT_ID` | ⚠️ Optional | Required for Calendar/Gmail |
+| `GOOGLE_CLIENT_SECRET` | ⚠️ Optional | Required for Calendar/Gmail |
+| `GOOGLE_REFRESH_TOKEN` | ⚠️ Optional | Required for Calendar/Gmail |
+| `GMAIL_SENDER` | ⚠️ Optional | Gmail address for sending emails |
+| `PROPERTY_WEBSITE_BASE_URL` | ✅ | Fallback URL for property listings |
+| `AGENT_NAME` | ✅ | AI agent display name |
+| `REAL_ESTATE_COMPANY_NAME` | ✅ | Company name used in messages |
