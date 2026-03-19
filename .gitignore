@@ -1,0 +1,24 @@
+# Secrets and local overrides
+.env
+
+# n8n local data directory
+.n8n/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Node dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Build output
+frontend/dist/
+
+# Runtime SQLite database (created automatically on first start)
+backend/data/
