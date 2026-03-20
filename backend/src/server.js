@@ -1,5 +1,5 @@
 'use strict';
-require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../../../.env') });
 
 const express = require('express');
 const cors = require('cors');
@@ -59,7 +59,24 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+const supabase = require('./db/supabaseClient');
+
+// Verify Supabase connection on startup
+async function checkDatabase() {
+  try {
+    const { error } = await supabase.from('leads').select('id').limit(1);
+    if (error) {
+      console.error('❌ Supabase Connection Error:', error.message);
+    } else {
+      console.log('✅ Supabase Connected');
+    }
+  } catch (err) {
+    console.error('❌ Supabase Connection Critical Failure:', err.message);
+  }
+}
+
+app.listen(PORT, async () => {
+  await checkDatabase();
   console.log(`WhatsApp Real Estate Agent backend running on port ${PORT}`);
 });
 
