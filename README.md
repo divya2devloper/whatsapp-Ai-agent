@@ -101,6 +101,12 @@ This single command will:
 2.  **Start Backend** on `http://localhost:3001`.
 3.  **Start Frontend** (Dashboard) on `http://localhost:5173`.
 
+### 🔄 Keeping in Sync
+To pull latest changes and update dependencies in one command:
+```bash
+npm run pull:all
+```
+
 ---
 
 ## Google OAuth2 Setup (Calendar + Gmail)
