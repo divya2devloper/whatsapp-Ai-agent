@@ -117,13 +117,49 @@ async function sendConfirmationEmail({ to, leadName, property, scheduledAt }) {
 }
 
 /**
- * Delete a Google Calendar event by its event ID.
+ * Update a Google Calendar event (e.g. for rescheduling).
+ */
+async function updateCalendarEvent(eventId, { summary, description, startIso, leadEmail }) {
+  const auth = buildAuth();
+  const calendar = google.calendar({ version: 'v3', auth });
+  const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+
+  const endDate = new Date(startIso);
+  endDate.setHours(endDate.getHours() + 1);
+
+  const event = {
+    summary,
+    description,
+    start: { dateTime: startIso, timeZone: 'Asia/Kolkata' },
+    end: { dateTime: endDate.toISOString(), timeZone: 'Asia/Kolkata' },
+    attendees: leadEmail ? [{ email: leadEmail }] : [],
+  };
+
+  const response = await calendar.events.patch({
+    calendarId,
+    eventId,
+    resource: event,
+    sendUpdates: 'all',
+  });
+
+  return response.data;
+}
+
+/**
+ * Delete a Google Calendar event (e.g. for cancellations).
  */
 async function deleteCalendarEvent(eventId) {
   const auth = buildAuth();
   const calendar = google.calendar({ version: 'v3', auth });
   const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
-  await calendar.events.delete({ calendarId, eventId });
+
+  const response = await calendar.events.delete({
+    calendarId,
+    eventId,
+    sendUpdates: 'all',
+  });
+
+  return response.data;
 }
 
-module.exports = { createCalendarEvent, deleteCalendarEvent, sendConfirmationEmail };
+module.exports = { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, sendConfirmationEmail };

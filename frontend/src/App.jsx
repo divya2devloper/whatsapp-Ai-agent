@@ -6,6 +6,7 @@ import LeadDetail from './pages/LeadDetail';
 import Properties from './pages/Properties';
 import Appointments from './pages/Appointments';
 import Settings from './pages/Settings';
+import AITraining from './pages/AITraining';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="leads/:phone" element={<LeadDetail />} />
           <Route path="properties" element={<Properties />} />
           <Route path="appointments" element={<Appointments />} />
+          <Route path="training" element={<AITraining />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

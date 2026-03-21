@@ -3,7 +3,11 @@ const express = require('express');
 const { body, param, validationResult } = require('express-validator');
 const router = express.Router();
 const supabase = require('../db/supabaseClient');
-const { createCalendarEvent, deleteCalendarEvent } = require('../services/google');
+const { createCalendarEvent, deleteCalendarEvent, updateCalendarEvent } = require('../services/google');
+const multer = require('multer');
+const xlsx = require('xlsx');
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 function handleValidation(req, res) {
   const errors = validationResult(req);
@@ -13,6 +17,66 @@ function handleValidation(req, res) {
   }
   return false;
 }
+
+// GET /api/appointments/export
+router.get('/export', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('appointments').select('*').order('scheduled_at', { ascending: false });
+    if (error) throw error;
+
+    const worksheet = xlsx.utils.json_to_sheet(data);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Appointments');
+
+    const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=appointments.xlsx');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/appointments/import
+router.post('/import', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  try {
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    if (data.length === 0) return res.status(400).json({ error: 'Excel file is empty' });
+
+    const apptsToInsert = [];
+    for (const row of data) {
+      const phone = String(row['Lead Phone'] || row.lead_phone || row.Phone || row.phone || '').trim();
+      const scheduled_at = row['Scheduled At'] || row.scheduled_at || row.Date || row.date;
+      
+      if (phone && scheduled_at) {
+        apptsToInsert.push({
+          lead_phone: phone,
+          lead_name: row['Lead Name'] || row.lead_name || null,
+          lead_email: row['Lead Email'] || row.lead_email || null,
+          property_desc: row['Property'] || row.property_desc || null,
+          scheduled_at: new Date(scheduled_at).toISOString(),
+          status: row.Status || row.status || 'confirmed',
+          notes: row.Notes || row.notes || null,
+        });
+      }
+    }
+
+    if (apptsToInsert.length > 0) {
+      const { error } = await supabase.from('appointments').insert(apptsToInsert);
+      if (error) throw error;
+    }
+
+    res.status(201).json({ success: true, count: apptsToInsert.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // GET /api/appointments
 router.get('/', async (req, res) => {
@@ -118,16 +182,37 @@ router.put(
     param('id').isInt(),
     body('status').optional().isIn(['confirmed', 'cancelled', 'completed']),
     body('notes').optional().trim(),
+    body('scheduled_at').optional().isISO8601(),
   ],
   async (req, res) => {
     if (handleValidation(req, res)) return;
     const id = req.params.id;
 
-    const { status, notes } = req.body;
+    const { status, notes, scheduled_at } = req.body;
+    
+    // Fetch current appointment to get calendar_event_id and other details for Google update
+    const { data: currentAppt, error: fetchErr } = await supabase.from('appointments').select('*').eq('id', id).single();
+    if (fetchErr || !currentAppt) return res.status(404).json({ error: 'Appointment not found' });
+
     const updateData = {};
     if (status !== undefined) updateData.status = status;
     if (notes !== undefined) updateData.notes = notes;
+    if (scheduled_at !== undefined) updateData.scheduled_at = scheduled_at;
     updateData.updated_at = new Date().toISOString();
+
+    // If scheduled_at changed and there's a Google Calendar event, update it
+    if (scheduled_at && currentAppt.calendar_event_id) {
+      try {
+        await updateCalendarEvent(currentAppt.calendar_event_id, {
+          summary: `Property Visit – ${currentAppt.lead_name || currentAppt.lead_phone} (RESCHEDULED)`,
+          description: currentAppt.property_desc || '',
+          startIso: scheduled_at,
+          leadEmail: currentAppt.lead_email || null,
+        });
+      } catch (gcErr) {
+        console.warn('Google Calendar update failed (non-fatal):', gcErr.message);
+      }
+    }
 
     const { data, error } = await supabase
       .from('appointments')
@@ -136,8 +221,6 @@ router.put(
       .select();
 
     if (error) return res.status(500).json({ error: error.message });
-    if (!data || data.length === 0) return res.status(404).json({ error: 'Appointment not found' });
-
     res.json(data[0]);
   }
 );

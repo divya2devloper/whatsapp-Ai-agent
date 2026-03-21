@@ -6,7 +6,7 @@ const supabase = require('../db/supabaseClient');
 const ALLOWED_KEYS = [
   'agent_name',
   'company_name',
-  'openai_model',
+  'gemini_model',
   'property_website_base_url',
 ];
 
@@ -28,9 +28,9 @@ router.put(
   [
     body('agent_name').optional().trim().notEmpty(),
     body('company_name').optional().trim().notEmpty(),
-    body('openai_model')
+    body('gemini_model')
       .optional()
-      .isIn(['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo']),
+      .isIn(['gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash']),
     body('property_website_base_url').optional().isURL(),
   ],
   async (req, res) => {

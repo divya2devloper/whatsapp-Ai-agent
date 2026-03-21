@@ -66,3 +66,65 @@ CREATE TABLE IF NOT EXISTS settings (
 -- ALTER TABLE properties ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+
+-- ──────────────────────────────────────────────────────────────────
+-- AI Training Features Schema
+-- ──────────────────────────────────────────────────────────────────
+
+-- 6. AI Training Q&A Table
+CREATE TABLE IF NOT EXISTS ai_training_qa (
+    id         BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    question   TEXT    NOT NULL,
+    answer     TEXT    NOT NULL,
+    is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 7. Knowledge Documents Table
+CREATE TABLE IF NOT EXISTS knowledge_documents (
+    id         BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    filename   TEXT    NOT NULL,
+    file_url   TEXT,
+    status     TEXT    NOT NULL DEFAULT 'processing',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Enable pgvector extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 8. Knowledge Chunks Table (for RAG / Vector search)
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+    id            BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    document_id   BIGINT NOT NULL REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+    content       TEXT   NOT NULL,
+    embedding     vector(768),
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create a function for vector similarity search matching pgvector
+CREATE OR REPLACE FUNCTION match_knowledge_chunks(
+  query_embedding vector(768),
+  match_count int DEFAULT 5
+)
+RETURNS TABLE (
+  id bigint,
+  document_id bigint,
+  content text,
+  similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    k.id,
+    k.document_id,
+    k.content,
+    1 - (k.embedding <=> query_embedding) AS similarity
+  FROM knowledge_chunks k
+  ORDER BY k.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;

@@ -12,6 +12,8 @@ import StatsCard from '../components/StatsCard';
 import Badge from '../components/Badge';
 import { format, parseISO, subDays } from 'date-fns';
 
+import Skeleton from '../components/Skeleton';
+
 const COLORS = ['#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#1e40af', '#1d4ed8', '#1e3a8a', '#3b82f6', '#2563eb'];
 
 export default function Dashboard() {
@@ -27,14 +29,28 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+      <div className="p-8 bg-gray-50 min-h-full animate-fade-in">
+        <div className="mb-8">
+          <Skeleton className="h-10 w-48 mb-2" />
+          <Skeleton className="h-6 w-96" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-2xl shadow-sm" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <Skeleton className="lg:col-span-2 h-[400px] rounded-2xl shadow-sm" />
+          <Skeleton className="h-[400px] rounded-2xl shadow-sm" />
+          <Skeleton className="lg:col-span-2 h-[400px] rounded-2xl shadow-sm" />
+          <Skeleton className="h-[400px] rounded-2xl shadow-sm" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-8 bg-gray-50 min-h-full">
+    <div className="p-8 bg-gray-50 min-h-full animate-fade-in">
       <div className="mb-8">
         <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Dashboard</h1>
         <p className="text-gray-500 mt-1 text-lg">Real-time overview of your WhatsApp AI Real Estate Agent</p>

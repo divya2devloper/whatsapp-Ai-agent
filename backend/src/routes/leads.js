@@ -2,6 +2,10 @@ const express = require('express');
 const { param, body, validationResult } = require('express-validator');
 const router = express.Router();
 const supabase = require('../db/supabaseClient');
+const multer = require('multer');
+const xlsx = require('xlsx');
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 function handleValidation(req, res) {
   const errors = validationResult(req);
@@ -11,6 +15,56 @@ function handleValidation(req, res) {
   }
   return false;
 }
+
+// GET /api/leads/export
+router.get('/export', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('leads').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+
+    const worksheet = xlsx.utils.json_to_sheet(data);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Leads');
+
+    const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=leads.xlsx');
+    res.send(buffer);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/leads/import
+router.post('/import', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  try {
+    const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data = xlsx.utils.sheet_to_json(worksheet);
+
+    if (data.length === 0) return res.status(400).json({ error: 'Excel file is empty' });
+
+    const leadsToInsert = data.map(l => ({
+      phone: String(l.Phone || l.phone || l.Mobile || l.mobile || '').trim(),
+      name: l.Name || l.name || null,
+      email: l.Email || l.email || null,
+      status: l.Status || l.status || 'new',
+      notes: l.Notes || l.notes || null,
+    })).filter(l => l.phone);
+
+    if (leadsToInsert.length > 0) {
+      const { error } = await supabase.from('leads').upsert(leadsToInsert, { onConflict: 'phone' });
+      if (error) throw error;
+    }
+
+    res.status(201).json({ success: true, count: leadsToInsert.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // GET /api/leads
 router.get('/', async (req, res) => {

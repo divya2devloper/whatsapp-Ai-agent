@@ -5,6 +5,8 @@ import { getLead, updateLead } from '../api/client';
 import Badge from '../components/Badge';
 import { format } from 'date-fns';
 
+import Skeleton from '../components/Skeleton';
+
 const STATUS_OPTIONS = ['new', 'active', 'qualified', 'converted', 'closed'];
 
 export default function LeadDetail() {
@@ -39,8 +41,23 @@ export default function LeadDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      <div className="p-8 animate-fade-in">
+        <div className="flex items-center gap-3 mb-6">
+          <Skeleton className="w-8 h-8 rounded-full" />
+          <div>
+            <Skeleton className="h-8 w-48 mb-1" />
+            <Skeleton className="h-4 w-32" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <Skeleton className="h-[60vh] rounded-xl" />
+          </div>
+          <div className="space-y-5">
+            <Skeleton className="h-80 rounded-xl" />
+            <Skeleton className="h-40 rounded-xl" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -50,7 +67,7 @@ export default function LeadDetail() {
   const { lead, conversations, appointments } = data;
 
   return (
-    <div className="p-8">
+    <div className="p-8 animate-fade-in">
       <div className="flex items-center gap-3 mb-6">
         <Link to="/leads" className="text-gray-500 hover:text-gray-700">
           <ArrowLeft className="w-5 h-5" />

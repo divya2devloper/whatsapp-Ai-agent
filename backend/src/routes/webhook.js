@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../db/supabaseClient');
 const ai = require('../services/ai');
-const twilioSvc = require('../services/twilio');
+const whatsappSvc = require('../services/whatsapp');
 const googleSvc = require('../services/google');
 
 async function getSetting(key) {
@@ -144,38 +144,70 @@ async function handleBookAppointment(action, phone, replyText) {
   return fullReply;
 }
 
+// GET /webhook/whatsapp (Meta Verification)
+router.get('/whatsapp', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  
+  const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || 'suthar123';
+
+  if (mode && token) {
+    if (mode === 'subscribe' && token === verifyToken) {
+      console.log('WEBHOOK_VERIFIED');
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
+  } else {
+    res.sendStatus(400);
+  }
+});
+
 // POST /webhook/whatsapp
 router.post('/whatsapp', async (req, res) => {
-  // Respond to Twilio immediately to avoid timeout
-  res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  const body = req.body;
+
+  // Immediately respond 200 to acknowledge receipt of the event
+  res.status(200).send('EVENT_RECEIVED');
+  
+  console.log('[Webhook POST] Received payload:', JSON.stringify(body, null, 2));
 
   try {
-    const body = req.body || {};
-    const from = body.From || '';
-    const msgBody = (body.Body || '').trim();
+    if (body.object) {
+      if (body.entry && body.entry[0].changes && body.entry[0].changes[0].value.messages && body.entry[0].changes[0].value.messages[0]) {
+        const value = body.entry[0].changes[0].value;
+        const msg = value.messages[0];
+        
+        let from = msg.from; 
+        const msgBody = msg.text ? msg.text.body.trim() : '';
+        const name = value.contacts && value.contacts[0] && value.contacts[0].profile ? value.contacts[0].profile.name : null;
 
-    if (!from || !msgBody) return;
+        if (!from || !msgBody) return;
 
-    const phone = from.replace('whatsapp:', '').trim();
+        // Ensure from number is formatted appropriately (no +)
+        const phone = from.replace('+', '').trim();
 
-    // Upsert lead
-    await upsertLead(phone, null, null);
+        // Upsert lead using the name from WhatsApp profile if available
+        await upsertLead(phone, name, null);
 
-    // Get AI response
-    const { replyText, action } = await ai.chat(phone, msgBody);
+        // Get AI response
+        const { replyText, action } = await ai.chat(phone, msgBody);
 
-    let finalReply = replyText;
+        let finalReply = replyText;
 
-    if (action && action.type === 'property_search') {
-      finalReply = await handlePropertySearch(action, phone, replyText);
-    } else if (action && action.type === 'book_appointment') {
-      finalReply = await handleBookAppointment(action, phone, replyText);
+        if (action && action.type === 'property_search') {
+          finalReply = await handlePropertySearch(action, phone, replyText);
+        } else if (action && action.type === 'book_appointment') {
+          finalReply = await handleBookAppointment(action, phone, replyText);
+        }
+
+        // Send WhatsApp reply using official Meta Cloud API
+        await whatsappSvc.sendWhatsApp(phone, finalReply);
+      }
     }
-
-    // Send WhatsApp reply
-    await twilioSvc.sendWhatsApp(from, finalReply);
   } catch (err) {
-    console.error('[Webhook] Error:', err);
+    console.error('[Webhook] Error formatting/sending message:', err);
   }
 });
 

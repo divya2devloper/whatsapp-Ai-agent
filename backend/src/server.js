@@ -11,6 +11,7 @@ const propertiesRouter = require('./routes/properties');
 const appointmentsRouter = require('./routes/appointments');
 const statsRouter = require('./routes/stats');
 const settingsRouter = require('./routes/settings');
+const trainingRouter = require('./routes/training');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -49,6 +50,7 @@ app.use('/api/properties', apiLimiter, propertiesRouter);
 app.use('/api/appointments', apiLimiter, appointmentsRouter);
 app.use('/api/stats', apiLimiter, statsRouter);
 app.use('/api/settings', apiLimiter, settingsRouter);
+app.use('/api/training', apiLimiter, trainingRouter);
 
 // 404
 app.use((_req, res) => res.status(404).json({ error: 'Not found' }));

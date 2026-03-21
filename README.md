@@ -8,12 +8,12 @@ An end-to-end WhatsApp AI agent for real estate lead management, built with **No
 
 | Feature | Description |
 |---|---|
-| 💬 WhatsApp AI Chat | OpenAI-powered conversational agent answers property inquiries 24/7 |
-| 🏘️ Property Search | AI detects location intent and sends a matching listing link from your database |
-| 📅 Appointment Booking | Collects lead details and books property visits on **Google Calendar** |
-| 📧 Email Confirmation | Sends an HTML confirmation email via **Gmail OAuth2** |
-| 👩‍💼 Admin Dashboard | React dashboard to manage leads, conversations, properties and appointments |
-| 🗄️ Supabase DB | Cloud-hosted PostgreSQL database with real-time capabilities |
+| 💬 WhatsApp AI Chat | Gemini-powered conversational agent with RAG (Retrieval Augmented Generation) |
+| 🧠 AI Training | Custom dashboard to train your agent with your own rules, Q&A, and documents (PDF/TXT) |
+| 🏘️ Property Search | AI detects intent and matches listings from your Supabase database |
+| 📅 Appointment Booking | Automated scheduling on **Google Calendar** with Gmail confirmations |
+| 📊 Admin Dashboard | Premium React dashboard with real-time lead tracking and skeleton loading |
+| 🗄️ Supabase DB | Cloud-hosted PostgreSQL with vector search (pgvector) for AI knowledge |
 
 ---
 
@@ -25,37 +25,27 @@ whatsapp-Ai-agent/
 │   ├── src/
 │   │   ├── server.js         # Entry point
 │   │   ├── db/
-│   │   │   ├── supabaseClient.js # Supabase configuration
-│   │   │   └── testConnection.js # Connectivity test utility
+│   │   │   └── supabaseClient.js # Supabase configuration
 │   │   ├── routes/
-│   │   │   ├── webhook.js    # POST /webhook/whatsapp (Twilio)
-│   │   │   ├── leads.js      # /api/leads
-│   │   │   ├── properties.js # /api/properties
-│   │   │   ├── appointments.js # /api/appointments
-│   │   │   ├── stats.js      # /api/stats
-│   │   │   └── settings.js   # /api/settings
+│   │   │   ├── webhook.js    # Inbound WhatsApp webhook
+│   │   │   ├── training.js   # AI training endpoints (RAG/QA)
+│   │   │   └── ...           # Leads, Properties, Appointments
 │   │   └── services/
-│   │       ├── ai.js         # OpenAI conversation + intent parsing
-│   │       ├── twilio.js     # WhatsApp message sender
+│   │       ├── ai.js         # Gemini + RAG + Intent parsing
+│   │       ├── whatsapp.js   # WhatsApp Meta API service
 │   │       └── google.js     # Google Calendar + Gmail
 │   ├── package.json
-│   └── supabase_schema.sql   # SQL for initializing database
+│   └── supabase_schema.sql   # Database schema & migrations
 ├── frontend/                 # React admin dashboard
 │   ├── src/
-│   │   ├── App.jsx           # Router
-│   │   ├── api/client.js     # Axios API client
-│   │   ├── components/       # Layout, Badge, StatsCard
+│   │   ├── components/       # Premium UI components & Skeletons
 │   │   └── pages/
 │   │       ├── Dashboard.jsx
-│   │       ├── Leads.jsx
-│   │       ├── LeadDetail.jsx
-│   │       ├── Properties.jsx
-│   │       ├── Appointments.jsx
-│   │       └── Settings.jsx
+│   │       ├── AITraining.jsx # New training interface
+│   │       └── ...
 │   └── package.json
 ├── workflow/
 │   └── whatsapp_real_estate_agent.json  # n8n workflow (optional)
-├── docs/workflow-overview.md
 └── .env.example
 ```
 
@@ -67,7 +57,7 @@ whatsapp-Ai-agent/
 
 - **Node.js 18+**
 - **Twilio account** with WhatsApp enabled (sandbox or approved number)
-- **OpenAI API key**
+- **Google Gemini API key**
 - **Google Cloud project** with Calendar + Gmail APIs enabled
 - **Supabase Account** (Free tier works perfectly)
 
@@ -163,8 +153,8 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 TWILIO_ACCOUNT_SID=your-twilio-sid
 TWILIO_AUTH_TOKEN=your-twilio-token
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
-OPENAI_API_KEY=your-openai-key
-OPENAI_MODEL=gpt-4o
+GEMINI_API_KEY=your-gemini-key
+GEMINI_MODEL=gemini-2.5-flash
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 GOOGLE_REFRESH_TOKEN=your-refresh-token
@@ -174,6 +164,16 @@ GMAIL_SENDER=your-email@gmail.com
 AGENT_NAME=Priya
 REAL_ESTATE_COMPANY_NAME=YourRealty
 ```
+
+---
+
+## 🧠 AI Training & Knowledge Base (RAG)
+
+The agent uses **Google Gemini** enhanced with **Retrieval Augmented Generation (RAG)**. You can train it without code:
+
+1.  **Persona & Rules**: Define exactly how the agent should speak (e.g., "Always be formal," "Never mention price first").
+2.  **Custom Q&A**: Add specific question/answer pairs that the AI must follow exactly.
+3.  **Document Upload**: Upload PDF brochures or text price lists. The system automatically converts them into vector embeddings in Supabase, allowing the AI to "search" your documents for answers.
 
 ---
 
@@ -287,6 +287,6 @@ See `.env.example` for the full list. Required variables:
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Supabase service_role API key |
 | `TWILIO_ACCOUNT_SID` | ✅ | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | ✅ | Twilio auth token |
-| `OPENAI_API_KEY` | ✅ | OpenAI API key |
+| `GEMINI_API_KEY` | ✅ | Google Gemini API key |
 | `AGENT_NAME` | ✅ | AI agent display name |
 | `REAL_ESTATE_COMPANY_NAME` | ✅ | Company name |

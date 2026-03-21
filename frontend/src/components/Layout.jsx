@@ -6,6 +6,7 @@ import {
   CalendarCheck,
   Settings,
   MessageCircle,
+  Bot
 } from 'lucide-react';
 
 const navSections = [
@@ -26,6 +27,7 @@ const navSections = [
   {
     label: 'System',
     items: [
+      { to: '/training', icon: Bot, label: 'AI Training' },
       { to: '/settings', icon: Settings, label: 'Settings' },
     ]
   }
